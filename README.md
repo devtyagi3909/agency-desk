@@ -1,4 +1,9 @@
-# AgencyDesk 🚀
+# AgencyDesk 
+
+<p align="center">
+  <img src="./assets/terminal.svg" alt="Animated Terminal" width="800"/>
+</p>
+
 
 > A cutting-edge, multi-tenant agency & client management platform built with Next.js 14, FastAPI, and PostgreSQL.
 
@@ -6,7 +11,7 @@ AgencyDesk is designed from the ground up to handle complex multi-tenant environ
 
 ---
 
-## 🏗 Architecture Overview
+## Architecture Overview
 
 AgencyDesk leverages a robust, decoupled architecture:
 - **Frontend**: Next.js 14 with App Router, TailwindCSS, and shadcn/ui.
@@ -15,7 +20,7 @@ AgencyDesk leverages a robust, decoupled architecture:
 
 ---
 
-## ✨ Features
+## Features
 
 - **Strict Tenant Isolation**: Data is separated by `agency_id` at the database level.
 - **Role-Based Visibility**: Internal data (tasks, comments, attachments) are safely hidden from client users.
@@ -25,7 +30,7 @@ AgencyDesk leverages a robust, decoupled architecture:
 
 ---
 
-## 📊 Core Flows & Mermaid Diagrams
+## Core Flows & Mermaid Diagrams
 
 ### 1. Database Schema Overview
 ```mermaid
@@ -93,7 +98,7 @@ sequenceDiagram
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 - Docker & Docker Compose

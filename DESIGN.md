@@ -1,10 +1,10 @@
-# AgencyDesk 🏛 Architecture & Design
+# AgencyDesk Architecture & Design
 
 Welcome to the definitive guide on AgencyDesk's internal engineering architecture. We've built this to be robust, secure, and scalable for multi-tenant applications.
 
 ---
 
-## 🔒 1. Tenant Isolation
+## 1. Tenant Isolation
 
 Tenant isolation is enforced deeply at the database schema level. Every domain entity (`tasks`, `projects`, `clients`, `comments`, `time_entries`, `attachments`) has a direct `agency_id` foreign key.
 
@@ -12,7 +12,7 @@ In the FastAPI backend, every endpoint requires an `agency_id` path parameter. T
 
 ---
 
-## 👁 2. Client Visibility & Internal Content Filtering
+## 2. Client Visibility & Internal Content Filtering
 
 Clients are blocked from seeing internal content through a strict role-based filter applied at the query level, not just the UI level.
 
@@ -20,7 +20,7 @@ Entities that can be internal (`tasks`, `comments`, `attachments`) possess an `i
 
 ---
 
-## 🎭 3. Multi-Agency Identity Model
+## 3. Multi-Agency Identity Model
 
 To solve the "one person, two agencies" problem, the system separates `User` (identity) from `Membership` (authorization).
 
@@ -42,7 +42,7 @@ graph TD
 
 ---
 
-## 🛡 4. Edge Case Highlight: Safe Assignee Removal
+## 4. Edge Case Highlight: Safe Assignee Removal
 
 When an `agency_member` is removed from a project, they may have active tasks assigned to them. Deleting the member naively would trigger a constraint violation or cascade delete the task.
 
@@ -50,7 +50,7 @@ To prevent this, the schema defines the `assignee_membership_id` foreign key on 
 
 ---
 
-## 🏗 5. Multi-Tenant Architecture Overview
+## 5. Multi-Tenant Architecture Overview
 
 ```mermaid
 architecture-beta
