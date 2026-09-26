@@ -1,75 +1,43 @@
-# AgencyDesk Architecture & Design
+# System Design & Technical Decisions
 
-Welcome to the definitive guide on AgencyDesk's internal engineering architecture. We've built this to be robust, secure, and scalable for multi-tenant applications.
+This document details the core engineering decisions, edge cases, and tradeoffs made during the development of AgencyDesk. 
 
----
+## Core Architecture
+AgencyDesk operates on a classic SPA architecture utilizing Next.js for the client and FastAPI (Python) for the backend, backed by PostgreSQL. The primary architectural constraint is the requirement for a robust multi-tenant system within a single database instance.
 
-## 1. Tenant Isolation
+## Edge Cases and Solutions
 
-Tenant isolation is enforced deeply at the database schema level. Every domain entity (`tasks`, `projects`, `clients`, `comments`, `time_entries`, `attachments`) has a direct `agency_id` foreign key.
+### 1. Cross-tenant Isolation
+**The Problem**: In a single database multi-tenant architecture, data leakage is a critical vulnerability. Missing a `WHERE agency_id = X` clause could expose one agency's clients to another.
 
-In the FastAPI backend, every endpoint requires an `agency_id` path parameter. The `get_current_membership` dependency explicitly verifies that the currently authenticated user has a valid row in the `memberships` table for that specific `agency_id`. Once inside the router logic, every single SQLAlchemy query is appended with `.filter(Entity.agency_id == agency_id)`. This guarantees that even if a user guesses a valid UUID for a project in another agency, the query will yield zero results.
+**The Solution**: Isolation is enforced at the router level by extracting the `agency_id` from the verified JWT (populated during login). Every endpoint requires `agency_id` as a path parameter, which is validated against the JWT. This guarantees that operations are intrinsically scoped to the authenticated tenant context. 
 
----
+**Tradeoff**: Passing `agency_id` explicitly in every endpoint increases boilerplate, but relying on implicit context variables (like `ContextVar` in Python) obfuscates data flow and makes testing brittle. Explicit path parameters ensure the routing layer explicitly defines the tenant boundary.
 
-## 2. Client Visibility & Internal Content Filtering
+### 2. Internal Content Filtering
+**The Problem**: Agencies require the ability to collaborate privately on tasks, comments, and files before presenting them to clients. If filtering is handled client-side, the data is still transmitted over the network and can be intercepted.
 
-Clients are blocked from seeing internal content through a strict role-based filter applied at the query level, not just the UI level.
+**The Solution**: We utilize role-based query modification. If the authenticated user's role is `client_user`, the backend automatically appends a filter for `is_internal == False` before executing the database query.
 
-Entities that can be internal (`tasks`, `comments`, `attachments`) possess an `is_internal` boolean flag. In the routers, we check the requester's role (extracted from their `Membership` record). If `membership.role == "client_user"`, the query is automatically modified to append `.filter(Entity.is_internal == False)`. This ensures internal data never leaves the server when queried by a client. Furthermore, clients are explicitly blocked from mutation endpoints (403 Forbidden) for time entries, task creation, and internal flags.
+**Tradeoff**: Query modification can lead to complex conditional logic. We opted for explicit `if membership.role == "client_user"` checks in the router rather than abstracting this into a generic repository layer. While this violates DRY slightly, it ensures that visibility logic is highly visible to developers reviewing the endpoint behavior, reducing the risk of accidental exposure during refactors.
 
----
+### 3. One Person, Two Agencies
+**The Problem**: A freelancer might work for "Agency A" as a member and "Agency B" as a client. If roles are tied directly to the `User` model, this poly-membership breaks down.
 
-## 3. Multi-Agency Identity Model
+**The Solution**: We implement a normalized `Membership` model serving as a join table between `Users` and `Agencies`. The `role` and `client_id` (if applicable) are attributes of the `Membership`, not the `User`. The JWT payload embeds the specific `agency_id` and `role` for the active session.
 
-To solve the "one person, two agencies" problem, the system separates `User` (identity) from `Membership` (authorization).
+**Tradeoff**: This requires users to log in specifically to a workspace (using `agency_slug`), meaning they cannot view an aggregate dashboard across all agencies. This simplifies authorization at the cost of a slightly more fragmented user experience for power users.
 
-The `users` table holds only identity credentials (email, hashed_password). Roles do not exist on the user object. Instead, roles live on the `memberships` table, which maps a `user_id` to an `agency_id` with a specific `role` enum. This many-to-many relationship means `alice@example.com` can authenticate once, but act as an `agency_admin` in "Alpha Agency" and a `client_user` in "Beta Agency". JWTs are scoped per agency login, embedding the specific role the user holds in that active context.
+### 4. Invite Races and Idempotency
+**The Problem**: Distributed systems can suffer from race conditions during invitations. A user might click an invite link twice, or an admin might send two invites. Attempting to insert duplicate memberships will cause database integrity errors.
 
-```mermaid
-graph TD
-    U[User: alice@example.com]
-    A[Alpha Agency]
-    B[Beta Agency]
-    MA[Membership: Admin]
-    MB[Membership: Client User]
-    
-    U --> MA
-    U --> MB
-    MA --> A
-    MB --> B
-```
+**The Solution**: The invitation acceptance logic uses a check-and-set (upsert) pattern. We first query for an existing membership. If none exists, we insert. The database schema enforces a unique constraint on `(user_id, agency_id)` to catch race conditions at the lowest level.
 
----
+**Tradeoff**: We use a Read-Modify-Write pattern in application code instead of a raw SQL `INSERT ... ON CONFLICT DO NOTHING`. The ORM approach is slower but allows us to reliably trigger application-level events (like sending welcome emails) based on whether the user was newly added.
 
-## 4. Edge Case Highlight: Safe Assignee Removal
+### 5. Safe Assignee Removal
+**The Problem**: When an employee leaves an agency or is removed from a project, they must be removed from the system. However, deleting their membership cannot cascade to delete the tasks they worked on, as this would destroy historical project data.
 
-When an `agency_member` is removed from a project, they may have active tasks assigned to them. Deleting the member naively would trigger a constraint violation or cascade delete the task.
+**The Solution**: We enforce `ON DELETE SET NULL` at the database level for the `assignee_membership_id` foreign key on the `tasks` table. Furthermore, the application logic for removing a member from a project explicitly unassigns them from all active tasks in that project.
 
-To prevent this, the schema defines the `assignee_membership_id` foreign key on the `tasks` table with `ON DELETE SET NULL`. Furthermore, the `DELETE /projects/{id}/members/{id}` endpoint executes an explicit update query setting `assignee_membership_id = NULL` for all tasks in the project belonging to that user. This preserves the task history and prevents destructive cascading deletes.
-
----
-
-## 5. Multi-Tenant Architecture Overview
-
-```mermaid
-architecture-beta
-    group api(cloud)[Backend API]
-    group db(database)[Database Schema]
-
-    service fastApi(server)[FastAPI Server] in api
-    service auth(server)[Auth Middleware] in api
-    
-    service agencies(database)[agencies] in db
-    service users(database)[users] in db
-    service memberships(database)[memberships] in db
-    service entities(database)[domain entities] in db
-
-    fastApi -- auth
-    auth -- users
-    auth -- memberships
-    memberships -- agencies
-    entities -- agencies
-```
-
-*Designed by the masters of multi-tenancy.*
+**Tradeoff**: Setting fields to NULL means application code must always handle the `assignee == None` state. This is preferable to reassigning tasks to a "dummy" or "system" user, which pollutes reporting metrics.

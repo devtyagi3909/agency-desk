@@ -12,7 +12,9 @@ _SessionLocal = None
 def get_engine():
     global _engine
     if _engine is None:
-        DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/agencydesk")
+        DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+psycopg://postgres:postgres@localhost:5432/agencydesk")
+        if DATABASE_URL.startswith("postgresql://"):
+            DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
         if DATABASE_URL.startswith("sqlite"):
             from sqlalchemy.pool import StaticPool
             _engine = create_engine(
