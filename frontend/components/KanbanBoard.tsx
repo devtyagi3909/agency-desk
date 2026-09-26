@@ -1,0 +1,1 @@
+export const KanbanBoard = () => <div>Board</div>;

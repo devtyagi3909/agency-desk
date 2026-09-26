@@ -1,0 +1,1 @@
+export const ProjectDashboardStats = () => <div>Stats</div>;

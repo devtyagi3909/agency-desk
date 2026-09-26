@@ -1,0 +1,1 @@
+export const TaskModal = () => <div>Modal</div>;
