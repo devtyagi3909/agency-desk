@@ -152,7 +152,7 @@ sequenceDiagram
     Frontend->>Frontend: Store tokens & Redirect
 ```
 
-### Multi-tenant Isolation
+## Multi-tenant Isolation
 
 ```mermaid
 graph TD
